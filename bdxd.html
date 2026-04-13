@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>⚡ 暴打仙帝 · 召唤物版</title>
+  <title>⚡ 暴打仙帝 · 班长护体版</title>
   <style>
     * { box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
     body { margin: 0; min-height: 100vh; background: linear-gradient(145deg, #0b0e1a 0%, #1a1f2e 100%); display: flex; justify-content: center; align-items: center; font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; padding: 8px; }
@@ -41,6 +41,7 @@
     <div class="skill-btn" data-skill="homework">📚暑假作业</div>
     <div class="skill-btn" data-skill="liu">🧑‍🎤刘世鹏</div>
     <div class="skill-btn" data-skill="wang">🥤王老吉</div>
+    <div class="skill-btn" data-skill="banzhang">👩‍🏫班长</div>
     <div class="skill-btn" data-skill="manual">✋手动攻击</div>
   </div>
   <div class="action-hint">
@@ -79,8 +80,10 @@
     let projectiles = [];
     let effects = [];
     
-    // 召唤物数组：{ type, timer, totalDamage, damagePerFrame, x, y }
+    // 召唤物数组：{ type, timer, totalDamage?, damagePerFrame?, x, y }
     let summons = [];
+    // 班长单独激活标志 (用于伤害免疫和外观)
+    let banzhangActive = false;
 
     let manualMode = false;
     let isDragging = false;
@@ -95,9 +98,14 @@
       hpText.textContent = `${Math.max(0, emperor.hp)}/${emperor.maxHp}`;
     }
 
-    // 伤害仙帝
+    // 伤害仙帝 (班长存在时免疫)
     function damageEmperor(amount, sourceX, sourceY) {
       if (!emperor.alive) return;
+      if (banzhangActive) {
+        // 班长护体，免疫伤害
+        showFloatingText('🛡️免疫', emperor.x + emperor.w/2, emperor.y - 10, '#aaddff', 18);
+        return;
+      }
       emperor.hp = Math.max(0, emperor.hp - amount);
       emperor.hitFlash = 8;
       updateHpBar();
@@ -108,7 +116,9 @@
         emperor.grayed = true;
         emperor.respawnTimer = 300; // 5秒后重生
         msgBubble.textContent = '💀仙帝倒下了...💀';
-        summons = []; // 清除所有召唤物
+        // 清除所有召唤物及班长状态
+        summons = [];
+        banzhangActive = false;
       }
     }
 
@@ -120,6 +130,7 @@
     // 范围伤害
     function applySplashDamage(centerX, centerY, radius, damage) {
       if (!emperor.alive) return;
+      if (banzhangActive) return; // 班长护体
       const ex = emperor.x + emperor.w/2;
       const ey = emperor.y + emperor.h/2;
       const dx = ex - centerX, dy = ey - centerY;
@@ -192,28 +203,37 @@
           addProjectile(currentSkill, canvasX, canvasY);
           break;
         case 'ghost':
-          // 生成鬼姥召唤物，持续120帧(2秒)，总伤害30
           summons.push({
             type: 'ghost',
             timer: 120,
             totalDamage: 30,
-            damagePerFrame: 30 / 120,  // 0.25
+            damagePerFrame: 30 / 120,
             x: emperor.x + 20,
             y: emperor.y - 30
           });
           showFloatingText('👻鬼姥现身!', emperor.x+35, emperor.y-40, '#aa66ff');
           break;
         case 'liu':
-          // 生成刘世鹏，持续120帧，总伤害20
           summons.push({
             type: 'liu',
             timer: 120,
             totalDamage: 20,
-            damagePerFrame: 20 / 120,  // 0.1667
+            damagePerFrame: 20 / 120,
             x: emperor.x - 10,
             y: emperor.y - 30
           });
           showFloatingText('🧑‍🎤刘世鹏出现!', emperor.x+35, emperor.y-40, '#66ccff');
+          break;
+        case 'banzhang':
+          // 班长召唤物：持续5秒(300帧)，不造成伤害，但使仙帝免疫并变乌龟
+          summons.push({
+            type: 'banzhang',
+            timer: 600,
+            x: emperor.x + 30,
+            y: emperor.y - 40
+          });
+          banzhangActive = true;
+          showFloatingText('👩‍🏫班长护体! 仙帝变🐢', emperor.x+35, emperor.y-50, '#ffb3d9', 22);
           break;
         default: break;
       }
@@ -275,30 +295,44 @@
       }
     }
 
-    // 更新召唤物 (造成伤害并减少计时)
+    // 更新召唤物 (造成伤害并减少计时，班长特殊处理)
     function updateSummons() {
+      let stillHasBanzhang = false;
       for (let i = summons.length - 1; i >= 0; i--) {
         const s = summons[i];
         if (!emperor.alive) {
           summons.splice(i,1);
           continue;
         }
-        // 造成伤害
-        damageEmperor(s.damagePerFrame, s.x, s.y);
-        s.timer--;
-        // 让召唤物跟随仙帝（保持在仙帝周围）
-        if (s.type === 'ghost') {
-          s.x = emperor.x + 20 + Math.sin(frame * 0.1) * 10;
-          s.y = emperor.y - 20 + Math.cos(frame * 0.2) * 8;
-        } else {
-          s.x = emperor.x - 10 + Math.cos(frame * 0.15) * 12;
-          s.y = emperor.y - 25 + Math.sin(frame * 0.1) * 10;
-        }
         
-        if (s.timer <= 0) {
-          summons.splice(i,1);
+        if (s.type === 'banzhang') {
+          // 班长不造成伤害，只计时和跟随
+          s.timer--;
+          // 跟随仙帝
+          s.x = emperor.x + 30 + Math.sin(frame * 0.1) * 8;
+          s.y = emperor.y - 40 + Math.cos(frame * 0.15) * 6;
+          if (s.timer > 0) stillHasBanzhang = true;
+          else {
+            summons.splice(i,1);
+          }
+        } else {
+          // 鬼姥/刘世鹏造成伤害
+          damageEmperor(s.damagePerFrame, s.x, s.y);
+          s.timer--;
+          if (s.type === 'ghost') {
+            s.x = emperor.x + 20 + Math.sin(frame * 0.1) * 10;
+            s.y = emperor.y - 20 + Math.cos(frame * 0.2) * 8;
+          } else {
+            s.x = emperor.x - 10 + Math.cos(frame * 0.15) * 12;
+            s.y = emperor.y - 25 + Math.sin(frame * 0.1) * 10;
+          }
+          if (s.timer <= 0) {
+            summons.splice(i,1);
+          }
         }
       }
+      // 更新班长激活状态
+      banzhangActive = stillHasBanzhang;
     }
 
     // 更新投射物
@@ -342,6 +376,8 @@
           updateHpBar();
           msgBubble.textContent = '⚡仙帝归来⚡';
           showFloatingText('“本帝不死不灭”', emperor.x + 10, emperor.y - 20, '#FFD966', 22);
+          // 重生时班长状态已清除
+          banzhangActive = false;
         }
       }
     }
@@ -354,17 +390,28 @@
       ctx.fillStyle = '#2a3a4a';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       
-      // 仙帝
-      if (emperorImg.complete && emperorImg.naturalWidth > 0) {
-        ctx.filter = emperor.grayed ? 'grayscale(1)' : (emperor.hitFlash > 0 ? 'brightness(1.5)' : 'none');
-        ctx.drawImage(emperorImg, emperor.x, emperor.y, emperor.w, emperor.h);
-        ctx.filter = 'none';
-      } else {
-        ctx.fillStyle = '#a57c50';
-        ctx.fillRect(emperor.x, emperor.y, emperor.w, emperor.h);
-        ctx.fillStyle = 'white';
+      // 仙帝绘制 (班长激活时变成乌龟emoji)
+      if (banzhangActive) {
+        // 乌龟形态
+        ctx.font = 'bold 64px sans';
+        ctx.fillStyle = '#8B5E3C';
+        ctx.fillText('🐢', emperor.x + 5, emperor.y + 55);
+        // 显示无敌标识
         ctx.font = 'bold 16px sans';
-        ctx.fillText('仙帝', emperor.x+15, emperor.y+45);
+        ctx.fillStyle = '#ffddbb';
+        ctx.fillText('🛡️无敌', emperor.x + 15, emperor.y - 8);
+      } else {
+        if (emperorImg.complete && emperorImg.naturalWidth > 0) {
+          ctx.filter = emperor.grayed ? 'grayscale(1)' : (emperor.hitFlash > 0 ? 'brightness(1.5)' : 'none');
+          ctx.drawImage(emperorImg, emperor.x, emperor.y, emperor.w, emperor.h);
+          ctx.filter = 'none';
+        } else {
+          ctx.fillStyle = '#a57c50';
+          ctx.fillRect(emperor.x, emperor.y, emperor.w, emperor.h);
+          ctx.fillStyle = 'white';
+          ctx.font = 'bold 16px sans';
+          ctx.fillText('仙帝', emperor.x+15, emperor.y+45);
+        }
       }
       if (emperor.hitFlash > 0) emperor.hitFlash--;
 
@@ -395,21 +442,27 @@
           ctx.font = 'bold 14px sans';
           ctx.fillStyle = '#d4b5ff';
           ctx.fillText('鬼姥', s.x-10, s.y+25);
-        } else {
+        } else if (s.type === 'liu') {
           ctx.fillText('🧑‍🎤', s.x, s.y);
           ctx.font = 'bold 14px sans';
           ctx.fillStyle = '#aad4ff';
           ctx.fillText('刘世鹏', s.x-20, s.y+25);
+        } else if (s.type === 'banzhang') {
+          ctx.fillText('👩‍🏫', s.x, s.y);
+          ctx.font = 'bold 14px sans';
+          ctx.fillStyle = '#ffb3d9';
+          ctx.fillText('班长', s.x-15, s.y+25);
         }
-        // 显示剩余伤害/时间条
-        const remainPercent = s.timer / 120;
+        // 时间条 (班长显示5秒进度)
+        const maxTime = (s.type === 'banzhang') ? 300 : 120;
+        const remainPercent = s.timer / maxTime;
         ctx.fillStyle = '#333';
         ctx.fillRect(s.x-20, s.y+30, 40, 5);
-        ctx.fillStyle = s.type==='ghost' ? '#aa66ff' : '#66ccff';
+        ctx.fillStyle = s.type==='ghost' ? '#aa66ff' : (s.type==='liu' ? '#66ccff' : '#ff99bb');
         ctx.fillRect(s.x-20, s.y+30, 40 * remainPercent, 5);
       });
 
-      // 特效 (爆炸光圈、漂浮文字)
+      // 特效
       effects = effects.filter(e => { e.life--; return e.life>0; });
       effects.forEach(e => {
         if (e.type === 'explosion') {
@@ -429,7 +482,7 @@
       if (emperor.alive) {
         frame++;
         if (frame % 6 === 0) aiMove();
-        updateSummons();      // 召唤物伤害与更新
+        updateSummons();
       }
       updateProjectiles();
       updateRespawn();
